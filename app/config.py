@@ -12,11 +12,23 @@ class Config:
     database_path: str
 
 
+def load_bot_token() -> str:
+    token_file = os.getenv("BOT_TOKEN_FILE", "").strip()
+    if token_file:
+        try:
+            token = open(token_file, encoding="utf-8").read().strip()
+        except OSError as exc:
+            raise RuntimeError("BOT_TOKEN_FILE cannot be read") from exc
+    else:
+        token = os.getenv("BOT_TOKEN", "").strip()
+    if not token:
+        raise RuntimeError("Set BOT_TOKEN_FILE or BOT_TOKEN")
+    return token
+
+
 def load_config() -> Config:
     load_dotenv()
-    token = os.getenv("BOT_TOKEN", "").strip()
-    if not token:
-        raise RuntimeError("BOT_TOKEN is not set. Copy .env.example to .env and add the token.")
+    token = load_bot_token()
     raw_ids = os.getenv("ALLOWED_USER_IDS", "")
     raw_admin_ids = os.getenv("ADMIN_USER_IDS", "")
     try:
