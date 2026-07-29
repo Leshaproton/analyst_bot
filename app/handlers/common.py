@@ -25,29 +25,33 @@ def report_keyboard(attempt_id: int) -> InlineKeyboardMarkup:
 
 
 @router.message(CommandStart())
-async def start(message: Message) -> None:
+async def start(message: Message, admin_user_ids: frozenset[int]) -> None:
     await message.answer(
         "Добро пожаловать! Бот поможет определить грейд системного аналитика.\n\n"
         "Выберите действие в меню. Тест содержит 100 вопросов, для каждого нужно выбрать один ответ.",
-        reply_markup=main_menu(),
+        reply_markup=main_menu(message.from_user.id, admin_user_ids),
     )
 
 
 @router.message(Command("help"))
-async def help_message(message: Message) -> None:
+async def help_message(message: Message, admin_user_ids: frozenset[int]) -> None:
     await message.answer(
         "В разделе тестирования последовательно ответьте на 100 вопросов. "
         "В результатах доступен последний итог и полный отчёт с выбранными ответами.\n\n"
         "/cancel — прекратить текущее тестирование",
-        reply_markup=main_menu(),
+        reply_markup=main_menu(message.from_user.id, admin_user_ids),
     )
 
 
 @router.message(F.text == VIEW_RESULTS)
-async def view_results(message: Message, results_repository: ResultsRepository) -> None:
+async def view_results(message: Message, results_repository: ResultsRepository,
+                       admin_user_ids: frozenset[int]) -> None:
     attempt = results_repository.latest(message.from_user.id)
     if attempt is None:
-        await message.answer("У вас пока нет завершённых тестирований.", reply_markup=main_menu())
+        await message.answer(
+            "У вас пока нет завершённых тестирований.",
+            reply_markup=main_menu(message.from_user.id, admin_user_ids),
+        )
         return
     await message.answer(result_text(attempt), reply_markup=report_keyboard(attempt.id))
 

@@ -20,6 +20,8 @@ def test_attempt_is_saved_and_exported(tmp_path) -> None:
     assert "Правильных ответов: 100 из 100" in report
     assert "Выбранный ответ:" in report
     assert repository.report(attempt_id, 99) is None
+    assert repository.report_by_id(attempt_id)[0].user_id == 42
+    assert repository.recent_attempts()[0].id == attempt_id
 
 
 def test_draft_can_be_saved_loaded_and_deleted(tmp_path) -> None:

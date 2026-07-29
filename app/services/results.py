@@ -122,9 +122,22 @@ class ResultsRepository:
             row = db.execute("SELECT * FROM attempts WHERE user_id = ? ORDER BY id DESC LIMIT 1", (user_id,)).fetchone()
         return Attempt(**dict(row)) if row else None
 
+    def recent_attempts(self, limit: int = 20) -> list[Attempt]:
+        with self._connect() as db:
+            rows = db.execute("SELECT * FROM attempts ORDER BY id DESC LIMIT ?", (limit,)).fetchall()
+        return [Attempt(**dict(row)) for row in rows]
+
     def report(self, attempt_id: int, user_id: int) -> tuple[Attempt, list[sqlite3.Row]] | None:
         with self._connect() as db:
             row = db.execute("SELECT * FROM attempts WHERE id = ? AND user_id = ?", (attempt_id, user_id)).fetchone()
+            if row is None:
+                return None
+            answers = db.execute("SELECT * FROM answers WHERE attempt_id = ? ORDER BY position", (attempt_id,)).fetchall()
+        return Attempt(**dict(row)), answers
+
+    def report_by_id(self, attempt_id: int) -> tuple[Attempt, list[sqlite3.Row]] | None:
+        with self._connect() as db:
+            row = db.execute("SELECT * FROM attempts WHERE id = ?", (attempt_id,)).fetchone()
             if row is None:
                 return None
             answers = db.execute("SELECT * FROM answers WHERE attempt_id = ? ORDER BY position", (attempt_id,)).fetchall()

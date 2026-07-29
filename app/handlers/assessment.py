@@ -65,9 +65,13 @@ async def begin_assessment(message: Message, state: FSMContext,
 
 
 @router.message(Command("cancel"))
-async def cancel_assessment(message: Message, state: FSMContext) -> None:
+async def cancel_assessment(message: Message, state: FSMContext,
+                            admin_user_ids: frozenset[int]) -> None:
     if await state.get_state() is None:
-        await message.answer("Сейчас нет активного тестирования.", reply_markup=main_menu())
+        await message.answer(
+            "Сейчас нет активного тестирования.",
+            reply_markup=main_menu(message.from_user.id, admin_user_ids),
+        )
         return
     await state.set_state(Assessment.stopping)
     await message.answer("Сохранить уже выбранные ответы для продолжения позже?", reply_markup=stop_keyboard())
@@ -87,7 +91,8 @@ async def request_stop(callback: CallbackQuery, state: FSMContext) -> None:
 
 @router.callback_query(Assessment.stopping, F.data == "test:save")
 async def save_and_stop(callback: CallbackQuery, state: FSMContext,
-                        results_repository: ResultsRepository) -> None:
+                        results_repository: ResultsRepository,
+                        admin_user_ids: frozenset[int]) -> None:
     data = await state.get_data()
     answers = data.get("answers", [])
     results_repository.save_draft(callback.from_user.id, answers)
@@ -98,18 +103,25 @@ async def save_and_stop(callback: CallbackQuery, state: FSMContext,
             f"Тестирование приостановлено. Сохранено ответов: {len(answers)}.\n"
             "В следующий раз тест продолжится автоматически."
         )
-        await callback.message.answer("Главное меню:", reply_markup=main_menu())
+        await callback.message.answer(
+            "Главное меню:",
+            reply_markup=main_menu(callback.from_user.id, admin_user_ids),
+        )
 
 
 @router.callback_query(Assessment.stopping, F.data == "test:delete")
 async def delete_and_stop(callback: CallbackQuery, state: FSMContext,
-                          results_repository: ResultsRepository) -> None:
+                          results_repository: ResultsRepository,
+                          admin_user_ids: frozenset[int]) -> None:
     results_repository.delete_draft(callback.from_user.id)
     await state.clear()
     await callback.answer("Ответы удалены")
     if callback.message is not None:
         await callback.message.edit_text("Тестирование прекращено. Все ответы текущей попытки удалены.")
-        await callback.message.answer("Главное меню:", reply_markup=main_menu())
+        await callback.message.answer(
+            "Главное меню:",
+            reply_markup=main_menu(callback.from_user.id, admin_user_ids),
+        )
 
 
 @router.callback_query(Assessment.stopping, F.data == "test:continue")
@@ -129,7 +141,8 @@ async def continue_test(callback: CallbackQuery, state: FSMContext,
 @router.callback_query(Assessment.answering, F.data.startswith("answer:"))
 async def accept_answer(callback: CallbackQuery, state: FSMContext,
                         questions: tuple[Question, ...],
-                        results_repository: ResultsRepository) -> None:
+                        results_repository: ResultsRepository,
+                        admin_user_ids: frozenset[int]) -> None:
     if callback.message is None:
         await callback.answer()
         return
@@ -166,4 +179,7 @@ async def accept_answer(callback: CallbackQuery, state: FSMContext,
         "Тестирование завершено.\n\n" + result_text(attempt),
         reply_markup=report_keyboard(attempt_id),
     )
-    await callback.message.answer("Выберите следующий раздел:", reply_markup=main_menu())
+    await callback.message.answer(
+        "Выберите следующий раздел:",
+        reply_markup=main_menu(callback.from_user.id, admin_user_ids),
+    )
