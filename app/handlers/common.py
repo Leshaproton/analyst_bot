@@ -96,7 +96,11 @@ async def clear_chat(callback: CallbackQuery, bot: Bot, state: FSMContext,
     data = await state.get_data()
     answers = data.get("answers", [])
     if answers:
-        results_repository.save_draft(callback.from_user.id, answers)
+        results_repository.save_draft(
+            callback.from_user.id,
+            answers,
+            data.get("question_ids", []),
+        )
     await state.clear()
     chat_id = callback.message.chat.id
     latest_message_id = callback.message.message_id

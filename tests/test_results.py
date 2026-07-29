@@ -1,3 +1,5 @@
+import sqlite3
+
 from app.services.assessment import load_questions, summarize
 from app.services.results import ResultsRepository, build_report
 
@@ -27,7 +29,25 @@ def test_attempt_is_saved_and_exported(tmp_path) -> None:
 def test_draft_can_be_saved_loaded_and_deleted(tmp_path) -> None:
     repository = ResultsRepository(str(tmp_path / "results.sqlite3"))
     repository.initialize()
-    repository.save_draft(42, [0, 3, 1])
-    assert repository.load_draft(42) == [0, 3, 1]
+    repository.save_draft(42, [0, 3, 1], ["J003", "J001", "J002"])
+    draft = repository.load_draft(42)
+    assert draft.answers == [0, 3, 1]
+    assert draft.question_ids == ["J003", "J001", "J002"]
     repository.delete_draft(42)
     assert repository.load_draft(42) is None
+
+
+def test_existing_drafts_table_is_migrated(tmp_path) -> None:
+    database = tmp_path / "legacy.sqlite3"
+    with sqlite3.connect(database) as connection:
+        connection.execute(
+            """CREATE TABLE drafts (
+                user_id INTEGER PRIMARY KEY,
+                answers_json TEXT NOT NULL,
+                updated_at TEXT NOT NULL
+            )"""
+        )
+    repository = ResultsRepository(str(database))
+    repository.initialize()
+    repository.save_draft(42, [1], ["J001"])
+    assert repository.load_draft(42).question_ids == ["J001"]

@@ -22,6 +22,12 @@ class Attempt:
     grade: str
 
 
+@dataclass(frozen=True)
+class Draft:
+    answers: list[int]
+    question_ids: list[str]
+
+
 class ResultsRepository:
     def __init__(self, database_path: str) -> None:
         self.path = Path(database_path)
@@ -65,28 +71,41 @@ class ResultsRepository:
                 CREATE TABLE IF NOT EXISTS drafts (
                     user_id INTEGER PRIMARY KEY,
                     answers_json TEXT NOT NULL,
+                    question_ids_json TEXT NOT NULL DEFAULT '[]',
                     updated_at TEXT NOT NULL
                 );
             """)
+            columns = {row["name"] for row in db.execute("PRAGMA table_info(drafts)")}
+            if "question_ids_json" not in columns:
+                db.execute(
+                    "ALTER TABLE drafts ADD COLUMN question_ids_json TEXT NOT NULL DEFAULT '[]'"
+                )
 
-    def save_draft(self, user_id: int, selected: list[int]) -> None:
+    def save_draft(self, user_id: int, selected: list[int], question_ids: list[str]) -> None:
         with self._connect() as db:
             db.execute(
-                """INSERT INTO drafts (user_id, answers_json, updated_at)
-                   VALUES (?, ?, ?)
+                """INSERT INTO drafts (user_id, answers_json, question_ids_json, updated_at)
+                   VALUES (?, ?, ?, ?)
                    ON CONFLICT(user_id) DO UPDATE SET
                        answers_json = excluded.answers_json,
+                       question_ids_json = excluded.question_ids_json,
                        updated_at = excluded.updated_at""",
-                (user_id, json.dumps(selected), datetime.now(timezone.utc).isoformat()),
+                (user_id, json.dumps(selected), json.dumps(question_ids),
+                 datetime.now(timezone.utc).isoformat()),
             )
 
-    def load_draft(self, user_id: int) -> list[int] | None:
+    def load_draft(self, user_id: int) -> Draft | None:
         with self._connect() as db:
-            row = db.execute("SELECT answers_json FROM drafts WHERE user_id = ?", (user_id,)).fetchone()
+            row = db.execute(
+                "SELECT answers_json, question_ids_json FROM drafts WHERE user_id = ?",
+                (user_id,),
+            ).fetchone()
         if row is None:
             return None
-        selected = json.loads(row["answers_json"])
-        return [int(value) for value in selected]
+        return Draft(
+            answers=[int(value) for value in json.loads(row["answers_json"])],
+            question_ids=[str(value) for value in json.loads(row["question_ids_json"])],
+        )
 
     def delete_draft(self, user_id: int) -> None:
         with self._connect() as db:

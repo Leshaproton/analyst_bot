@@ -6,7 +6,7 @@ from aiogram.types import CallbackQuery, InlineKeyboardButton, InlineKeyboardMar
 
 from app.handlers.common import report_keyboard, result_text
 from app.keyboards import START_TEST, main_menu
-from app.services.assessment import Question, summarize
+from app.services.assessment import Question, questions_in_order, shuffled_questions, summarize
 from app.services.results import ResultsRepository
 
 
@@ -50,17 +50,30 @@ def question_text(index: int, questions: tuple[Question, ...]) -> str:
 async def begin_assessment(message: Message, state: FSMContext,
                            questions: tuple[Question, ...],
                            results_repository: ResultsRepository) -> None:
-    saved_answers = results_repository.load_draft(message.from_user.id) or []
-    if len(saved_answers) >= len(questions) or any(value not in range(4) for value in saved_answers):
+    draft = results_repository.load_draft(message.from_user.id)
+    saved_answers = draft.answers if draft else []
+    try:
+        ordered_questions = questions_in_order(questions, draft.question_ids) if draft else shuffled_questions(questions)
+    except ValueError:
         results_repository.delete_draft(message.from_user.id)
         saved_answers = []
+        ordered_questions = shuffled_questions(questions)
+    if len(saved_answers) >= len(ordered_questions) or any(value not in range(4) for value in saved_answers):
+        results_repository.delete_draft(message.from_user.id)
+        saved_answers = []
+        ordered_questions = shuffled_questions(questions)
+    question_ids = [question.id for question in ordered_questions]
     index = len(saved_answers)
     await state.set_state(Assessment.answering)
-    await state.set_data({"answers": saved_answers, "question_index": index})
+    await state.set_data({
+        "answers": saved_answers,
+        "question_index": index,
+        "question_ids": question_ids,
+    })
     prefix = f"Продолжаем сохранённый тест с вопроса {index + 1}.\n\n" if saved_answers else ""
     await message.answer(
-        prefix + question_text(index, questions),
-        reply_markup=answer_keyboard(index, questions[index]),
+        prefix + question_text(index, ordered_questions),
+        reply_markup=answer_keyboard(index, ordered_questions[index]),
     )
 
 
@@ -95,7 +108,11 @@ async def save_and_stop(callback: CallbackQuery, state: FSMContext,
                         admin_user_ids: frozenset[int]) -> None:
     data = await state.get_data()
     answers = data.get("answers", [])
-    results_repository.save_draft(callback.from_user.id, answers)
+    results_repository.save_draft(
+        callback.from_user.id,
+        answers,
+        data.get("question_ids", []),
+    )
     await state.clear()
     await callback.answer("Прогресс сохранён")
     if callback.message is not None:
@@ -129,12 +146,13 @@ async def continue_test(callback: CallbackQuery, state: FSMContext,
                         questions: tuple[Question, ...]) -> None:
     data = await state.get_data()
     index = data.get("question_index", 0)
+    ordered_questions = questions_in_order(questions, data.get("question_ids", []))
     await state.set_state(Assessment.answering)
     await callback.answer()
     if callback.message is not None:
         await callback.message.edit_text(
-            question_text(index, questions),
-            reply_markup=answer_keyboard(index, questions[index]),
+            question_text(index, ordered_questions),
+            reply_markup=answer_keyboard(index, ordered_questions[index]),
         )
 
 
@@ -149,6 +167,7 @@ async def accept_answer(callback: CallbackQuery, state: FSMContext,
     _, raw_index, raw_option = callback.data.split(":")
     index, selected = int(raw_index), int(raw_option)
     data = await state.get_data()
+    ordered_questions = questions_in_order(questions, data.get("question_ids", []))
     current_index = data.get("question_index", 0)
     if index != current_index:
         await callback.answer("Этот вопрос уже обработан.")
@@ -157,19 +176,19 @@ async def accept_answer(callback: CallbackQuery, state: FSMContext,
     await callback.answer()
     answers = [*data.get("answers", []), selected]
     next_index = index + 1
-    if next_index < len(questions):
+    if next_index < len(ordered_questions):
         await state.update_data(answers=answers, question_index=next_index)
         await callback.message.edit_text(
-            question_text(next_index, questions),
-            reply_markup=answer_keyboard(next_index, questions[next_index]),
+            question_text(next_index, ordered_questions),
+            reply_markup=answer_keyboard(next_index, ordered_questions[next_index]),
         )
         return
 
-    summary = summarize(questions, answers)
+    summary = summarize(ordered_questions, answers)
     attempt_id = results_repository.save(
         callback.from_user.id,
         callback.from_user.username or "",
-        questions,
+        ordered_questions,
         answers,
         summary,
     )

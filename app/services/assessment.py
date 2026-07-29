@@ -3,6 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 import json
 from pathlib import Path
+import random
 
 
 @dataclass(frozen=True)
@@ -27,6 +28,9 @@ class TestSummary:
     score: int
     max_score: int
     grade: str
+
+
+LEVEL_ORDER = ("Junior", "Middle", "Senior")
 
 
 def load_questions(path: Path | None = None) -> tuple[Question, ...]:
@@ -59,3 +63,22 @@ def summarize(questions: tuple[Question, ...], selected: list[int]) -> TestSumma
     percent = score / max_score * 100
     grade = "Senior" if percent >= 75 else "Middle" if percent >= 50 else "Junior"
     return TestSummary(correct_count, len(questions), score, max_score, grade)
+
+
+def shuffled_questions(questions: tuple[Question, ...],
+                       rng: random.Random | None = None) -> tuple[Question, ...]:
+    generator = rng or random.SystemRandom()
+    result: list[Question] = []
+    for level in LEVEL_ORDER:
+        group = [question for question in questions if question.level == level]
+        generator.shuffle(group)
+        result.extend(group)
+    return tuple(result)
+
+
+def questions_in_order(questions: tuple[Question, ...],
+                       question_ids: list[str]) -> tuple[Question, ...]:
+    by_id = {question.id: question for question in questions}
+    if len(question_ids) != len(questions) or set(question_ids) != set(by_id):
+        raise ValueError("Saved question order does not match the question bank")
+    return tuple(by_id[question_id] for question_id in question_ids)
